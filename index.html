@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Free browser app to align a protein across species from UniProt or FASTA, find orthologs automatically and score per-residue conservation (Jensen–Shannon divergence, entropy, identity). Runs in your browser.">
+<title>Conservation Bench — Lao LabTools</title>
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* Layout: two-pane bench. Left rail = sequence set (search, FASTA, list); right pane = profile plot, alignment, lookup, identity. */
+:root{
+  --bg:#f3f5f6; --surface:#ffffff; --sunk:#eceff1; --ink:#15202b; --muted:#56626d; --line:#d7dde2;
+  --accent:#0d6b67; --accent-soft:#d3eae7; --accent-ink:#ffffff; --mark:#c2410c; --danger:#b42318; --warn-bg:#fff4e5;
+  --ramp-lo:#eef3f6; --ramp-mid:#7fb2c2; --ramp-hi:#123d57;
+  --r-hyd:#bfd5f2; --r-aro:#b6e4e6; --r-pos:#f5c4c1; --r-neg:#e8c8ee; --r-pol:#cbeac5; --r-cys:#f6e2a2; --r-gly:#f7d4b2; --r-pro:#e3dfa6;
+  --f-ui:"Schibsted Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --f-display:"Bricolage Grotesque","Schibsted Grotesk","Helvetica Neue",sans-serif;
+  --radius:8px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0e141a; --surface:#151d25; --sunk:#1a242e; --ink:#e2e8ed; --muted:#94a1ac; --line:#2a3743;
+  --accent:#4cb7ae; --accent-soft:#163a38; --accent-ink:#04201e; --mark:#fb923c; --danger:#f97066; --warn-bg:#2e2214;
+  --ramp-lo:#1a2530; --ramp-mid:#2e7387; --ramp-hi:#a2e4ea;
+  --r-hyd:#27446a; --r-aro:#1d4d50; --r-pos:#5b2b2b; --r-neg:#4b2c56; --r-pol:#294c2a; --r-cys:#584819; --r-gly:#5a3c1e; --r-pro:#4b491d;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e141a; --surface:#151d25; --sunk:#1a242e; --ink:#e2e8ed; --muted:#94a1ac; --line:#2a3743;
+  --accent:#4cb7ae; --accent-soft:#163a38; --accent-ink:#04201e; --mark:#fb923c; --danger:#f97066; --warn-bg:#2e2214;
+  --ramp-lo:#1a2530; --ramp-mid:#2e7387; --ramp-hi:#a2e4ea;
+  --r-hyd:#27446a; --r-aro:#1d4d50; --r-pos:#5b2b2b; --r-neg:#4b2c56; --r-pol:#294c2a; --r-cys:#584819; --r-gly:#5a3c1e; --r-pro:#4b491d;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;padding-block:20px 14px;max-width:1500px;margin:0 auto}
+header.top h1{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:-.01em;margin:0}
+header.top h1 span{color:var(--accent)}
+header.top p{margin:0;color:var(--muted);max-width:70ch}
+
+.bench{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:16px;max-width:1500px;margin:0 auto;align-items:start}
+@media (max-width:900px){.bench{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+.panel>h2,.sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0;padding:12px 14px;border-bottom:1px solid var(--line)}
+.panel h2,.sec-head h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:0}
+.pad{padding:14px}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+
+.tabs{display:flex;gap:2px;background:var(--sunk);padding:3px;border-radius:7px}
+.tabs button{flex:1;border:0;background:transparent;padding:6px 10px;border-radius:5px;cursor:pointer;font-weight:500;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+label.fld{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:500}
+input[type=text],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;color:var(--ink)}
+textarea{font-family:var(--f-mono);font-size:12px;resize:vertical;min-height:120px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>.grow{flex:1;min-width:0}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--line)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.check{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);cursor:pointer}
+
+.note{font-size:12.5px;color:var(--muted);background:var(--sunk);border-radius:6px;padding:8px 10px}
+.note.warn{background:var(--warn-bg);color:var(--ink)}
+.note b{color:var(--ink);font-weight:600}
+
+.results{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.results table{width:100%;border-collapse:collapse;font-size:12.5px}
+.results td,.results th{padding:5px 7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.results th{position:sticky;top:0;background:var(--sunk);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.results tr.added td{opacity:.55}
+.results tr.alt td{background:var(--sunk)}
+.via{display:inline-block;font-size:10.5px;padding:0 5px;border-radius:4px;border:1px solid var(--line);color:var(--muted)}
+.badge.warnb{background:var(--warn-bg);color:var(--mark)}
+.badge{display:inline-block;font-size:10.5px;padding:0 5px;border-radius:4px;background:var(--accent-soft);color:var(--ink);font-weight:600;letter-spacing:.02em}
+
+.seqlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.seqlist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:7px 14px;border-bottom:1px solid var(--line)}
+.seqlist li:last-child{border-bottom:0}
+.seqlist input.lab{border:1px solid transparent;background:transparent;padding:2px 4px;font-weight:500;width:100%}
+.seqlist input.lab:hover,.seqlist input.lab:focus{border-color:var(--line);background:var(--surface)}
+.seqlist .meta{font-size:11.5px;color:var(--muted);padding-left:5px;font-family:var(--f-mono)}
+.refbtn{border:1px solid var(--line);background:transparent;border-radius:5px;font-size:11px;padding:2px 6px;cursor:pointer;color:var(--muted)}
+.refbtn[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.xbtn{border:0;background:transparent;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px}
+.xbtn:hover{color:var(--danger)}
+.empty{padding:18px 14px;color:var(--muted);font-size:13px}
+
+details.settings{border-top:1px solid var(--line)}
+details.settings summary{padding:10px 14px;cursor:pointer;font-weight:500;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.alignbar{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.progress{height:4px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.progress>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+
+.stats{display:flex;flex-wrap:wrap;gap:8px 22px;padding:12px 14px}
+.stat{display:flex;flex-direction:column}
+.stat b{font-family:var(--f-mono);font-size:18px;font-weight:600}
+.stat span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+
+.plotwrap{position:relative;padding:8px 10px 6px}
+canvas{display:block}
+#plot{width:100%;cursor:crosshair;touch-action:pan-y}
+.legend{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}
+.ramp{width:90px;height:8px;border-radius:2px;background:linear-gradient(90deg,var(--ramp-lo),var(--ramp-mid),var(--ramp-hi));border:1px solid var(--line)}
+
+.viewer{display:flex;min-width:0;border-top:1px solid var(--line)}
+.names{flex:0 0 auto;width:190px;border-right:1px solid var(--line);font-size:12.5px;background:var(--surface)}
+.names div{height:18px;line-height:18px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;justify-content:space-between;gap:6px}
+.names div .pid{font-family:var(--f-mono);font-size:11px;color:var(--muted);flex:none}
+.names .ref{font-weight:600}
+@media (max-width:600px){.names{width:118px}.names div .pid{display:none}}
+.scroller{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden}
+.scroller>div{position:relative}
+#aln{position:sticky;left:0}
+
+.tip{position:fixed;z-index:20;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12px;padding:6px 8px;border-radius:6px;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.tip .mono{font-size:11.5px}
+
+.tablewrap{overflow-x:auto}
+table.data{border-collapse:collapse;font-size:12.5px;min-width:100%}
+table.data th,table.data td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;white-space:nowrap}
+table.data th{font-weight:600;color:var(--muted);font-size:11.5px;text-align:center}
+table.data th.rl,table.data td.rl{text-align:left}
+table.data td.diff{color:var(--mark);font-weight:600}
+table.data td.gap{color:var(--muted)}
+.exports{display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px}
+.flash{animation:fl 1.2s ease-out}
+@keyframes fl{from{background:var(--accent-soft)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}.progress>i{transition:none}}
+footer{max-width:1500px;margin:18px auto 0;color:var(--muted);font-size:12px}
+</style>
+
+<header class="top">
+  <h1>Conservation <span>Bench</span></h1>
+  <p>Align a protein across species and score how conserved each residue is. Search UniProt or load FASTA; everything runs in your browser.</p>
+</header>
+
+<div class="bench">
+  <!-- LEFT RAIL -->
+  <div class="stack">
+    <section class="panel" aria-labelledby="h-add">
+      <h2 id="h-add">Add sequences</h2>
+      <div class="pad stack" style="gap:12px">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-search" aria-selected="true" aria-controls="pane-search">Search UniProt</button>
+          <button role="tab" id="tab-fasta" aria-selected="false" aria-controls="pane-fasta">FASTA</button>
+        </div>
+
+        <div id="pane-search" role="tabpanel" class="stack" style="gap:10px">
+          <div class="row">
+            <select id="q-mode" aria-label="Search by" style="width:auto;flex:0 0 auto">
+              <option value="ortho" selected>Orthologs of</option>
+              <option value="gene">Gene name</option>
+              <option value="protein">Protein name</option>
+              <option value="acc">Accessions</option>
+              <option value="raw">UniProt query</option>
+            </select>
+            <input type="text" id="q" class="grow" placeholder="PCNA or P12004" autocomplete="off" spellcheck="false">
+          </div>
+          <label class="fld" id="anchor-row">Starting species
+            <select id="q-anchor"></select>
+          </label>
+          <div class="chips" id="orgs" aria-label="Organisms"></div>
+          <div class="row" style="gap:14px" id="filter-row" hidden>
+            <label class="check"><input type="checkbox" id="q-rev" checked> Reviewed (Swiss-Prot)</label>
+            <label class="check"><input type="checkbox" id="q-exact" checked> Exact gene name</label>
+          </div>
+          <div class="row"><button class="btn primary" id="btn-search">Search</button><span class="small muted" id="search-status"></span></div>
+          <div class="note small" id="mode-note">Type a gene name or accession. Orthologs are found through UniProt's OMA and OrthoDB groups, so orthologs with different gene names (PCNA is POL30 in budding yeast) are included.</div>
+          <div id="search-out" hidden>
+            <div class="note small" id="ortho-sum" hidden style="margin-bottom:8px"></div>
+            <label class="check" id="alt-toggle" hidden style="margin-bottom:6px"><input type="checkbox" id="show-alt"> Show all candidate entries, not just the best per species</label>
+            <div class="results"><table><thead><tr><th></th><th>Organism</th><th>Entry</th><th>Len</th></tr></thead><tbody id="res-body"></tbody></table></div>
+            <div class="row" style="margin-top:8px"><button class="btn" id="btn-add-sel">Add selected</button><button class="btn ghost sm" id="btn-sel-all">Select all</button></div>
+          </div>
+        </div>
+
+        <div id="pane-fasta" role="tabpanel" class="stack" style="gap:10px" hidden>
+          <textarea id="fasta-in" spellcheck="false" placeholder=">sp|P12004|PCNA_HUMAN ... OS=Homo sapiens&#10;MFEARLVQGSILKKVLEALKDLINEACWDISS..."></textarea>
+          <div class="row">
+            <button class="btn primary" id="btn-fasta-add">Add sequences</button>
+            <label class="btn" for="fasta-file" style="cursor:pointer">Open file…</label>
+            <input type="file" id="fasta-file" accept=".fa,.fasta,.faa,.fas,.txt,.aln,.afa" multiple hidden>
+          </div>
+          <div class="small muted">Plain or aligned FASTA. You can also drop files onto this box. UniProt headers are parsed for organism and gene.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-set">
+      <h2 id="h-set"><span>Sequence set <span class="muted mono" id="set-count"></span></span><button class="btn ghost sm" id="btn-clear">Clear all</button></h2>
+      <div id="demo-note" class="note" style="margin:12px 14px 0" hidden><b>Demo set.</b> Ubiquitin from human, budding yeast and Arabidopsis, typed in to show the tool. Replace it with your own sequences before drawing conclusions.</div>
+      <ul class="seqlist" id="seqlist"></ul>
+      <details class="settings">
+        <summary>Alignment and scoring settings</summary>
+        <div class="pad stack" style="gap:10px;padding-top:4px">
+          <div class="grid2">
+            <label class="fld">Gap open<input type="number" id="s-go" value="10" min="1" max="30" step="0.5"></label>
+            <label class="fld">Gap extend<input type="number" id="s-ge" value="1" min="0.1" max="5" step="0.1"></label>
+          </div>
+          <label class="fld">Conservation score
+            <select id="s-method">
+              <option value="jsd">Jensen–Shannon divergence (Capra &amp; Singh 2007)</option>
+              <option value="entropy">Shannon entropy (1 − H / log₂20)</option>
+              <option value="identity">Identity to reference</option>
+            </select>
+          </label>
+          <div class="grid2">
+            <label class="fld">Window smoothing
+              <select id="s-win"><option value="0">None</option><option value="3" selected>±3 residues</option></select>
+            </label>
+            <label class="fld">Gap handling
+              <select id="s-gap"><option value="penal" selected>Penalize by gap fraction</option><option value="ignore">Ignore gaps</option></select>
+            </label>
+          </div>
+          <label class="check"><input type="checkbox" id="s-refine" checked> Refine alignment (re-estimated guide tree and iterative refinement; slower, more accurate)</label>
+          <label class="check"><input type="checkbox" id="s-wt" checked> Henikoff sequence weighting (down-weights redundant species)</label>
+          <label class="check"><input type="checkbox" id="s-prealigned"> Input is already aligned; skip alignment</label>
+        </div>
+      </details>
+      <div class="alignbar">
+        <button class="btn primary" id="btn-align">Align and score</button>
+        <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+        <div class="small muted" id="align-status">Add at least two sequences.</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- RIGHT PANE -->
+  <div class="stack">
+    <section class="panel" aria-labelledby="h-prof">
+      <div class="sec-head"><h2 id="h-prof">Conservation profile</h2>
+        <div class="row"><div class="legend"><span>variable</span><span class="ramp"></span><span>conserved</span></div>
+        <button class="btn ghost sm" id="btn-zoomreset" hidden>Reset zoom</button></div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="plotwrap"><canvas id="plot" height="220" aria-label="Per-residue conservation of the reference sequence"></canvas></div>
+      <div class="small muted" style="padding:0 14px 12px">Drag across the plot to zoom; double-click to reset. Click a position to jump to it in the alignment.</div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-aln">
+      <div class="sec-head"><h2 id="h-aln">Alignment</h2>
+        <div class="row">
+          <select id="v-color" aria-label="Colour residues by" style="width:auto">
+            <option value="type">Colour: residue type</option>
+            <option value="cons">Colour: conservation</option>
+            <option value="ident">Colour: identical to reference</option>
+            <option value="none">Colour: none</option>
+          </select>
+          <label class="check" title="Only colour columns at or above this conservation score">Min score <input type="range" id="v-thr" min="0" max="0.9" step="0.05" value="0" style="width:90px"><span class="mono small" id="v-thr-val">0.00</span></label>
+        </div>
+      </div>
+      <div class="viewer">
+        <div class="names" id="names"></div>
+        <div class="scroller" id="scroller"><div id="aln-inner"><canvas id="aln"></canvas></div></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-look">
+      <div class="sec-head"><h2 id="h-look">Residue lookup</h2></div>
+      <div class="pad stack" style="gap:10px">
+        <div class="row"><input type="text" id="look-in" class="grow mono" placeholder="e.g. R18, K48, 60-68" spellcheck="false"><button class="btn" id="btn-look">Look up</button><button class="btn ghost sm" id="btn-look-clear">Clear</button></div>
+        <div class="small muted">Positions use the reference sequence's numbering. A residue letter is optional and is checked against the reference.</div>
+        <div class="tablewrap" id="look-out"></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-id">
+      <div class="sec-head"><h2 id="h-id">Pairwise identity</h2><span class="small muted">% identical over positions where both sequences have a residue</span></div>
+      <div class="pad tablewrap" id="idmat"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-exp">
+      <div class="sec-head"><h2 id="h-exp">Export</h2></div>
+      <div class="exports">
+        <button class="btn" id="ex-fasta">Aligned FASTA</button>
+        <button class="btn" id="ex-clustal">Clustal (.aln)</button>
+        <button class="btn" id="ex-csv">Scores (CSV)</button>
+        <button class="btn" id="ex-png">Profile plot (PNG)</button>
+        <span class="small muted" id="ex-status" style="align-self:center"></span>
+      </div>
+    </section>
+  </div>
+</div>
+<footer>Alignment: progressive profile alignment (BLOSUM62, affine gaps, ClustalW-style sequence weights), then a guide tree re-estimated from the first alignment and tree-split iterative refinement on a sum-of-pairs score. On BAliBASE families (BALIFAM benchmark) it recovers about 88% of reference residue pairs. Very long or repetitive regions (e.g. the RPB1 CTD) remain hard for any aligner.</footer>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+"use strict";
+/* ---------- constants ---------- */
+const AA = "ARNDCQEGHILKMFPSTWYV";
+const IDX = new Int8Array(128).fill(-1);
+for (let i = 0; i < 20; i++) { IDX[AA.charCodeAt(i)] = i; IDX[AA.toLowerCase().charCodeAt(i)] = i; }
+const B62 = [
+ 4,-1,-2,-2, 0,-1,-1, 0,-2,-1,-1,-1,-1,-2,-1, 1, 0,-3,-2, 0,
+-1, 5, 0,-2,-3, 1, 0,-2, 0,-3,-2, 2,-1,-3,-2,-1,-1,-3,-2,-3,
+-2, 0, 6, 1,-3, 0, 0, 0, 1,-3,-3, 0,-2,-3,-2, 1, 0,-4,-2,-3,
+-2,-2, 1, 6,-3, 0, 2,-1,-1,-3,-4,-1,-3,-3,-1, 0,-1,-4,-3,-3,
+ 0,-3,-3,-3, 9,-3,-4,-3,-3,-1,-1,-3,-1,-2,-3,-1,-1,-2,-2,-1,
+-1, 1, 0, 0,-3, 5, 2,-2, 0,-3,-2, 1, 0,-3,-1, 0,-1,-2,-1,-2,
+-1, 0, 0, 2,-4, 2, 5,-2, 0,-3,-3, 1,-2,-3,-1, 0,-1,-3,-2,-2,
+ 0,-2, 0,-1,-3,-2,-2, 6,-2,-4,-4,-2,-3,-3,-2, 0,-2,-2,-3,-3,
+-2, 0, 1,-1,-3, 0, 0,-2, 8,-3,-3,-1,-2,-1,-2,-1,-2,-2, 2,-3,
+-1,-3,-3,-3,-1,-3,-3,-4,-3, 4, 2,-3, 1, 0,-3,-2,-1,-3,-1, 3,
+-1,-2,-3,-4,-1,-2,-3,-4,-3, 2, 4,-2, 2, 0,-3,-2,-1,-2,-1, 1,
+-1, 2, 0,-1,-3, 1, 1,-2,-1,-3,-2, 5,-1,-3,-1, 0,-1,-3,-2,-2,
+-1,-1,-2,-3,-1, 0,-2,-3,-2, 1, 2,-1, 5, 0,-2,-1,-1,-1,-1, 1,
+-2,-3,-3,-3,-2,-3,-3,-3,-1, 0, 0,-3, 0, 6,-4,-2,-2, 1, 3,-1,
+-1,-2,-2,-1,-3,-1,-1,-2,-2,-3,-3,-1,-2,-4, 7,-1,-1,-4,-3,-2,
+ 1,-1, 1, 0,-1, 0, 0, 0,-1,-2,-2, 0,-1,-2,-1, 4, 1,-3,-2,-2,
+ 0,-1, 0,-1,-1,-1,-1,-2,-2,-1,-1,-1,-1,-2,-1, 1, 5,-2,-2, 0,
+-3,-3,-4,-4,-2,-2,-3,-2,-2,-3,-2,-3,-1, 1,-4,-3,-2,11, 2,-3,
+-2,-2,-2,-3,-2,-1,-2,-3, 2,-1,-1,-2,-1, 3,-3,-2,-2, 2, 7,-1,
+ 0,-3,-3,-3,-1,-2,-2,-3,-3, 3, 1,-2, 1,-1,-2,-2, 0,-3,-1, 4];
+/* BLOSUM62 background frequencies (as used by Capra & Singh), order ARNDCQEGHILKMFPSTWYV */
+const BGraw = [0.078,0.051,0.041,0.052,0.024,0.034,0.059,0.083,0.025,0.062,0.092,0.056,0.024,0.044,0.043,0.059,0.055,0.014,0.034,0.072];
+const BGs = BGraw.reduce((a,b)=>a+b,0); const BG = BGraw.map(v=>v/BGs);
+const CLASS = {A:"hyd",I:"hyd",L:"hyd",M:"hyd",V:"hyd",F:"aro",W:"aro",Y:"aro",H:"aro",K:"pos",R:"pos",D:"neg",E:"neg",S:"pol",T:"pol",N:"pol",Q:"pol",C:"cys",G:"gly",P:"pro"};
+const ORGS = [
+  {k:"Human", ids:[9606], on:true}, {k:"Mouse", ids:[10090], on:true}, {k:"Chicken", ids:[9031], on:true},
+  {k:"Xenopus", ids:[8355,8364], on:true}, {k:"Zebrafish", ids:[7955], on:true}, {k:"Fly", ids:[7227], on:true},
+  {k:"Worm", ids:[6239], on:true}, {k:"Budding yeast", ids:[559292], on:true}, {k:"Fission yeast", ids:[284812], on:true},
+  {k:"Arabidopsis", ids:[3702], on:true}, {k:"Rat", ids:[10116], on:false}, {k:"E. coli", ids:[83333], on:false}
+];
+const DEMO = `>demo|UBQ|Ubiquitin OS=Homo sapiens GN=UBB
+MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG
+>demo|UBQ|Ubiquitin OS=Saccharomyces cerevisiae GN=UBI4
+MQIFVKTLTGKTITLEVESSDTIDNVKSKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG
+>demo|UBQ|Ubiquitin OS=Arabidopsis thaliana GN=UBQ10
+MQIFVKTLTGKTITLEVESSDTIDNVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLADYNIQKESTLHLVLRLRGG`;
+
+/* ---------- state ---------- */
+const S = {
+  seqs: [], refId: null, nextId: 1, demo: false,
+  aln: null,       // {ids:[], rows:[string]} rows ordered for display (ref first)
+  score: null, gap: null, colToRef: null, refToCol: null,
+  view: null, lookup: [], hoverCol: -1, flashCol: -1
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- theme helpers ---------- */
+let TOK = {};
+function readTokens(){
+  const cs = getComputedStyle(document.documentElement);
+  const names = ["bg","surface","sunk","ink","muted","line","accent","accent-soft","mark","ramp-lo","ramp-mid","ramp-hi","r-hyd","r-aro","r-pos","r-neg","r-pol","r-cys","r-gly","r-pro"];
+  TOK = {}; for (const n of names) TOK[n] = cs.getPropertyValue("--"+n).trim();
+  TOK._lo = hex(TOK["ramp-lo"]); TOK._mid = hex(TOK["ramp-mid"]); TOK._hi = hex(TOK["ramp-hi"]);
+}
+function hex(h){ h = h.replace("#",""); if (h.length===3) h = h.split("").map(c=>c+c).join(""); const n = parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function ramp(t){
+  t = Math.max(0, Math.min(1, t)); let a, b, u;
+  if (t < 0.5){ a = TOK._lo; b = TOK._mid; u = t*2; } else { a = TOK._mid; b = TOK._hi; u = (t-0.5)*2; }
+  const c = [0,1,2].map(i => Math.round(a[i] + (b[i]-a[i])*u));
+  return { css: `rgb(${c[0]},${c[1]},${c[2]})`, lum: (0.299*c[0]+0.587*c[1]+0.114*c[2])/255 };
+}
+
+/* ---------- FASTA parsing ---------- */
+function speciesShort(org){
+  if (!org) return ""; const p = org.replace(/\(.*?\)/g,"").trim().split(/\s+/);
+  return p.length >= 2 ? `${p[0][0]}. ${p[1]}` : p[0];
+}
+function parseFasta(text){
+  const out = []; let cur = null;
+  for (const raw of text.split(/\r?\n/)){
+    const line = raw.trim(); if (!line) continue;
+    if (line[0] === ">"){ cur = {header: line.slice(1).trim(), seq: ""}; out.push(cur); }
+    else if (line[0] === ";") continue;
+    else { if (!cur){ cur = {header: "seq"+(out.length+1), seq:""}; out.push(cur); } cur.seq += line.replace(/[^A-Za-z\-\.\*]/g,""); }
+  }
+  return out.map(r => {
+    const h = r.header; let acc = "", org = "", gene = "", tax = null;
+    const m = h.match(/^(sp|tr)\|([^|]+)\|(\S+)/); if (m) acc = m[2];
+    const os = h.match(/OS=(.+?)(?=\s+[A-Z]{2}=|$)/); if (os) org = os[1];
+    const gn = h.match(/GN=(\S+)/); if (gn) gene = gn[1];
+    const ox = h.match(/OX=(\d+)/); if (ox) tax = +ox[1];
+    const first = h.split(/\s+/)[0];
+    const label = (gene || (m ? m[3] : first)) + (org ? " · " + speciesShort(org) : "");
+    return { label: label.slice(0,60), acc: acc || (m ? "" : first.slice(0,40)), org, tax, seq: r.seq.replace(/\*/g,"").replace(/\./g,"-").toUpperCase(), features: [] };
+  }).filter(r => r.seq.replace(/-/g,"").length > 0);
+}
+
+/* ---------- sequence set ---------- */
+function addSeqs(list, {demo=false} = {}){
+  if (S.demo && !demo){ S.seqs = []; S.demo = false; S.refId = null; }
+  for (const r of list){
+    const id = S.nextId++;
+    S.seqs.push({ id, include: true, ...r });
+    if (S.refId == null) S.refId = id;
+  }
+  if (demo) S.demo = true;
+  const anyGap = S.seqs.some(s => s.seq.includes("-"));
+  const L = new Set(S.seqs.map(s => s.seq.length));
+  $("s-prealigned").checked = anyGap && L.size === 1;
+  renderSet();
+}
+function renderSet(){
+  const ul = $("seqlist"); ul.textContent = "";
+  $("demo-note").hidden = !S.demo;
+  const inc = S.seqs.filter(s => s.include).length;
+  $("set-count").textContent = S.seqs.length ? `${inc}/${S.seqs.length}` : "";
+  if (!S.seqs.length){ const li = document.createElement("li"); li.className = "empty"; li.style.display="block"; li.textContent = "No sequences yet. Search UniProt or paste FASTA above."; ul.appendChild(li); }
+  for (const s of S.seqs){
+    const li = document.createElement("li");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = s.include; cb.id = "inc-"+s.id; cb.setAttribute("aria-label","Include "+s.label);
+    cb.onchange = () => { s.include = cb.checked; renderSet(); };
+    const mid = document.createElement("div"); mid.style.minWidth = "0";
+    const lab = document.createElement("input"); lab.className = "lab"; lab.type = "text"; lab.value = s.label; lab.id = "lab-"+s.id; lab.setAttribute("aria-label","Label");
+    lab.onchange = () => { s.label = lab.value.trim() || s.label; if (S.aln) { renderNames(); renderIdMatrix(); runLookup(); } };
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = [s.acc, s.seq.replace(/-/g,"").length + " aa", s.org ? speciesShort(s.org) : ""].filter(Boolean).join(" · ");
+    mid.append(lab, meta);
+    const rb = document.createElement("button"); rb.className = "refbtn"; rb.textContent = "Ref"; rb.title = "Use as reference (numbering and identity)";
+    rb.setAttribute("aria-pressed", String(s.id === S.refId));
+    rb.onclick = () => { S.refId = s.id; s.include = true; renderSet(); if (S.aln && S.aln.ids.includes(s.id)) { reorderForRef(); computeScores(); renderAll(); } };
+    const x = document.createElement("button"); x.className = "xbtn"; x.textContent = "×"; x.setAttribute("aria-label","Remove "+s.label);
+    x.onclick = () => { S.seqs = S.seqs.filter(q => q !== s); if (S.refId === s.id) S.refId = S.seqs[0]?.id ?? null; if (!S.seqs.length) S.demo = false; renderSet(); };
+    li.append(cb, mid, rb, x); ul.appendChild(li);
+  }
+  $("btn-align").disabled = inc < 2;
+  if (!S.busy) $("align-status").textContent = inc < 2 ? "Add at least two sequences." : `${inc} sequences ready. Reference: ${S.seqs.find(s=>s.id===S.refId)?.label ?? "first"}.`;
+}
+
+/* ---------- UniProt search ---------- */
+function renderOrgs(){
+  const box = $("orgs"); box.textContent = "";
+  for (const o of ORGS){
+    const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = o.k;
+    b.setAttribute("aria-pressed", String(o.on)); b.onclick = () => { o.on = !o.on; b.setAttribute("aria-pressed", String(o.on)); };
+    box.appendChild(b);
+  }
+}
+let searchHits = [], orthoInfo = null;
+const UP = "https://rest.uniprot.org/uniprotkb/";
+const FIELDS_FULL = "accession,id,gene_names,organism_name,organism_id,length,sequence,protein_name,ft_domain,ft_region,ft_zn_fing,ft_motif,keyword,annotation_score";
+const FIELDS_MIN = "accession,id,gene_names,organism_name,organism_id,length,sequence,protein_name";
+const ACC_RE = /^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})(-\d+)?$/i;
+function orgIds(){ const on = ORGS.filter(o => o.on); return (on.length ? on : ORGS).flatMap(o => o.ids); }
+function orgGroup(tax){ const i = ORGS.findIndex(o => o.ids.includes(tax)); return i < 0 ? 99 : i; }
+function toHit(e){
+  const pd = e.proteinDescription || {};
+  return {
+    acc: e.primaryAccession, entry: e.uniProtkbId, reviewed: /reviewed/i.test(e.entryType || "") && !/unreviewed/i.test(e.entryType || ""),
+    org: e.organism?.scientificName || "", common: e.organism?.commonName || "", tax: e.organism?.taxonId,
+    gene: e.genes?.[0]?.geneName?.value || e.genes?.[0]?.orderedLocusNames?.[0]?.value || e.genes?.[0]?.orfNames?.[0]?.value || "",
+    pname: pd.recommendedName?.fullName?.value || pd.submissionNames?.[0]?.fullName?.value || "",
+    fragment: /fragment/i.test(pd.flag || ""),
+    refProteome: (e.keywords || []).some(k => k.id === "KW-1185"),
+    annot: +e.annotationScore || 0,
+    seq: e.sequence?.value || "",
+    features: (e.features || []).filter(f => ["Domain","Region","Zinc finger","Motif"].includes(f.type) && f.location?.start?.value && f.location?.end?.value)
+      .map(f => ({type: f.type, start: f.location.start.value, end: f.location.end.value, desc: f.description || f.type}))
+  };
+}
+async function upSearch(query, size = 500){
+  for (const f of [FIELDS_FULL, FIELDS_MIN]){
+    const r = await fetch(UP + "search?format=json&size=" + size + "&fields=" + f + "&query=" + encodeURIComponent(query), {headers:{Accept:"application/json"}});
+    if (r.status === 400 && f === FIELDS_FULL) continue;
+    if (!r.ok) throw new Error("UniProt returned " + r.status + (r.status === 400 ? " (check the query syntax)" : ""));
+    const j = await r.json(); return (j.results || []).map(toHit);
+  }
+  return [];
+}
+async function upEntry(acc){
+  const r = await fetch(UP + encodeURIComponent(acc.replace(/-\d+$/,"")) + ".json", {headers:{Accept:"application/json"}});
+  if (!r.ok) throw new Error(r.status === 404 ? `No UniProt entry ${acc}` : "UniProt returned " + r.status);
+  return r.json();
+}
+function buildQuery(){
+  const mode = $("q-mode").value, q = $("q").value.trim(); if (!q) return null;
+  let base;
+  if (mode === "gene") base = q.split(/[\s,]+/).filter(Boolean).map(g => ($("q-exact").checked ? "gene_exact:" : "gene:") + g).join(" OR ");
+  else if (mode === "protein") base = `protein_name:"${q.replace(/"/g,"")}"`;
+  else if (mode === "acc") base = q.split(/[\s,;]+/).filter(Boolean).map(a => "accession:" + a.replace(/[^A-Za-z0-9_.-]/g,"")).join(" OR ");
+  else base = q;
+  let query = `(${base})`;
+  if ($("q-rev").checked && mode !== "acc" && mode !== "raw") query += " AND (reviewed:true)";
+  const ids = ORGS.filter(o => o.on).flatMap(o => o.ids);
+  if (mode !== "acc" && mode !== "raw" && ids.length) query += " AND (" + ids.map(i => "organism_id:"+i).join(" OR ") + ")";
+  return query;
+}
+function searchFailed(err){
+  const blocked = err instanceof TypeError;
+  $("search-status").textContent = ""; orthoInfo = null; $("ortho-sum").hidden = true;
+  $("search-out").hidden = false;
+  $("res-body").innerHTML = `<tr><td colspan="4"><div class="note warn">${blocked
+    ? "<b>UniProt couldn't be reached.</b> Check your internet connection and try again. Previews inside claude.ai block outside connections; there, paste FASTA from uniprot.org in the FASTA tab instead."
+    : esc(err.message)}</div></td></tr>`;
+}
+async function doSearch(){
+  if ($("q-mode").value === "ortho") return doOrtho();
+  const query = buildQuery(); if (!query){ $("search-status").textContent = "Type a gene, protein name or accession."; return; }
+  $("search-status").textContent = "Searching…"; $("btn-search").disabled = true;
+  try {
+    searchHits = await upSearch(query, 200); orthoInfo = null;
+    searchHits.forEach(h => h.best = true);
+    searchHits.sort((a,b) => orgGroup(a.tax) - orgGroup(b.tax) || a.org.localeCompare(b.org));
+    renderHits();
+    $("search-status").textContent = searchHits.length ? `${searchHits.length} entr${searchHits.length===1?"y":"ies"}` : "No entries. Try Orthologs, Protein name, or untick Exact.";
+  } catch (err){ searchFailed(err); }
+  finally { $("btn-search").disabled = false; }
+}
+
+/* Ortholog search: anchor entry -> its OMA / OrthoDB group -> members in the chosen species -> best entry per species */
+function pickScore(h, anchor){
+  const strip = g => (g || "").toLowerCase().replace(/\.[ls]$/,"").replace(/[-_]/g,"");
+  let s = 0;
+  if (h.reviewed) s += 1000;
+  if (!h.fragment) s += 300;
+  if (h.refProteome) s += 200;
+  if (h.viaOma) s += 120;
+  s += 20*Math.min(5, h.annot);
+  if (anchor.gene && strip(h.gene) === strip(anchor.gene)) s += 50;
+  if (anchor.seq.length) s -= 150*Math.min(1, Math.abs(h.seq.length - anchor.seq.length)/anchor.seq.length);
+  return s;
+}
+async function doOrtho(){
+  const q = $("q").value.trim(); if (!q){ $("search-status").textContent = "Type a gene name or UniProt accession."; return; }
+  const anchorTax = +$("q-anchor").value;
+  $("btn-search").disabled = true; $("ortho-sum").hidden = true;
+  const say = t => $("search-status").textContent = t;
+  try {
+    // 1. anchor entry
+    say("Finding the starting entry…");
+    let anchorAcc = null;
+    if (ACC_RE.test(q)) anchorAcc = q.toUpperCase();
+    else {
+      const gq = q.replace(/[^A-Za-z0-9_.-]/g,"");
+      for (const query of [`(gene_exact:${gq}) AND (organism_id:${anchorTax}) AND (reviewed:true)`, `(gene_exact:${gq}) AND (organism_id:${anchorTax})`, `(gene:${gq}) AND (organism_id:${anchorTax})`]){
+        const hits = await upSearch(query, 25);
+        if (hits.length){ hits.sort((a,b) => (b.reviewed - a.reviewed) || (b.annot - a.annot) || (a.fragment - b.fragment)); anchorAcc = hits[0].acc; break; }
+      }
+      if (!anchorAcc){ const sp = ORGS.find(o => o.ids.includes(anchorTax))?.k || "that species"; say(`No ${q} gene found in ${sp}. Check the name, change the starting species, or use an accession.`); return; }
+    }
+    const aj = await upEntry(anchorAcc), anchor = toHit(aj);
+    const xr = aj.uniProtKBCrossReferences || [];
+    const ids = db => [...new Set(xr.filter(x => x.database === db).map(x => x.id))];
+    const oma = ids("OMA"), odb = ids("OrthoDB"), egg = ids("eggNOG");
+    const orgClause = "(" + orgIds().map(i => "organism_id:" + i).join(" OR ") + ")";
+    // 2. group members
+    const byAcc = new Map();
+    const add = (list, via) => { for (const h of list){ const cur = byAcc.get(h.acc); if (cur){ cur.via.add(via); if (via === "OMA") cur.viaOma = true; } else { h.via = new Set([via]); h.viaOma = via === "OMA"; byAcc.set(h.acc, h); } } };
+    const sources = [];
+    if (oma.length){ say(`Collecting OMA orthologs of ${anchor.gene || anchor.acc}…`); add(await upSearch(`(${oma.map(i => "xref:oma-" + i).join(" OR ")}) AND ${orgClause}`), "OMA"); sources.push("OMA"); }
+    if (odb.length){ say(`Collecting OrthoDB group of ${anchor.gene || anchor.acc}…`); add(await upSearch(`(${odb.map(i => "xref:orthodb-" + i).join(" OR ")}) AND ${orgClause}`), "OrthoDB"); sources.push("OrthoDB"); }
+    const groupsFound = () => new Set([...byAcc.values()].map(h => orgGroup(h.tax)));
+    const wanted = (ORGS.filter(o => o.on).length ? ORGS.filter(o => o.on) : ORGS);
+    if (groupsFound().size < wanted.length && egg.length){
+      say("Filling gaps from eggNOG…");
+      const missing = wanted.filter(o => !groupsFound().has(ORGS.indexOf(o))).flatMap(o => o.ids);
+      if (missing.length) add(await upSearch(`(${egg.map(i => "xref:eggnog-" + i).join(" OR ")}) AND (${missing.map(i => "organism_id:" + i).join(" OR ")})`), "eggNOG");
+      sources.push("eggNOG");
+    }
+    if (!byAcc.size && anchor.gene){
+      say("No ortholog groups on this entry; falling back to the gene name…");
+      add(await upSearch(`(gene:${anchor.gene.replace(/[^A-Za-z0-9_.-]/g,"")}) AND ${orgClause}`), "gene name"); sources.push("gene name");
+    }
+    if (!byAcc.has(anchor.acc)){ anchor.via = new Set(["start"]); byAcc.set(anchor.acc, anchor); }
+    // 3. best per species group (Xenopus laevis and tropicalis count as one group)
+    const all = [...byAcc.values()].filter(h => h.seq);
+    for (const h of all) h.score = pickScore(h, anchor);
+    const groups = new Map();
+    for (const h of all){ const g = orgGroup(h.tax); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(h); }
+    searchHits = [];
+    for (const g of [...groups.keys()].sort((a,b) => a-b)){
+      const list = groups.get(g).sort((a,b) => (b.acc === anchor.acc) - (a.acc === anchor.acc) || b.score - a.score);
+      list.forEach((h,i) => { h.best = i === 0; h.altCount = i === 0 ? list.length - 1 : 0; h.group = g; searchHits.push(h); });
+    }
+    const found = new Set(searchHits.map(h => h.group));
+    orthoInfo = { anchor, sources, missing: wanted.filter(o => !found.has(ORGS.indexOf(o))).map(o => o.k), nSpecies: found.size, eggOnly: searchHits.filter(h => h.best && h.via && h.via.size === 1 && h.via.has("eggNOG")).map(h => ORGS[h.group]?.k || h.org) };
+    renderHits(true);
+    say(`${orthoInfo.nSpecies} species · ${searchHits.length} candidate entr${searchHits.length === 1 ? "y" : "ies"}`);
+  } catch (err){ searchFailed(err); }
+  finally { $("btn-search").disabled = false; }
+}
+function renderHits(preselect = false){
+  $("search-out").hidden = false;
+  const have = new Set(S.seqs.map(s => s.acc));
+  const showAlt = $("show-alt").checked || !orthoInfo;
+  $("alt-toggle").hidden = !orthoInfo;
+  // summary for ortholog searches
+  const sum = $("ortho-sum");
+  if (orthoInfo){
+    const a = orthoInfo.anchor;
+    sum.hidden = false;
+    sum.innerHTML = `Starting from <b>${esc(a.gene || a.entry)}</b> <span class="mono">${esc(a.acc)}</span> (${esc(speciesShort(a.org))}). `
+      + (orthoInfo.sources.length ? `Orthologs from ${esc(orthoInfo.sources.join(" + "))}. ` : "")
+      + `The best entry per species is ticked: reviewed first, then the reference-proteome entry closest in length.`
+      + (orthoInfo.missing.length ? `<br><b>Not found:</b> ${esc(orthoInfo.missing.join(", "))}.` : "")
+      + (orthoInfo.eggOnly.length ? `<br><b>Check:</b> ${esc(orthoInfo.eggOnly.join(", "))} came only from the broader eggNOG group and may be a paralog.` : "");
+  } else sum.hidden = true;
+  const prev = new Set(searchHits.filter((h,i) => $("hit-"+i)?.checked).map(h => h.acc));
+  const tb = $("res-body"); tb.textContent = "";
+  for (const [i,h] of searchHits.entries()){
+    if (orthoInfo && !h.best && !showAlt) continue;
+    const tr = document.createElement("tr"); const added = have.has(h.acc);
+    tr.className = (added ? "added " : "") + (orthoInfo && !h.best ? "alt" : "");
+    const tags = (h.reviewed ? '<span class="badge">SP</span> ' : "") + (h.fragment ? '<span class="badge warnb">fragment</span> ' : "")
+      + (orthoInfo && h.via ? [...h.via].filter(v => v !== "start").map(v => `<span class="via">${esc(v)}</span>`).join(" ") : "");
+    const more = orthoInfo && h.best && h.altCount && !showAlt ? `<div class="muted" style="font-size:11px">+${h.altCount} other entr${h.altCount === 1 ? "y" : "ies"}</div>` : "";
+    tr.innerHTML = `<td><input type="checkbox" id="hit-${i}" ${added ? "disabled" : ""} ${!added && (preselect ? h.best : prev.has(h.acc)) ? "checked" : ""} aria-label="Select ${esc(h.acc)}"></td>
+      <td><label for="hit-${i}"><i>${esc(speciesShort(h.org))}</i>${h.common ? ` <span class="muted">${esc(h.common)}</span>` : ""}</label>${more}</td>
+      <td><b>${esc(h.gene || h.entry)}</b> ${tags}<div class="muted mono" style="font-size:11px">${esc(h.acc)} · ${esc(h.pname).slice(0,48)}</div></td>
+      <td class="mono">${h.seq.length}</td>`;
+    tb.appendChild(tr);
+  }
+}
+function addSelectedHits(){
+  const picked = searchHits.filter((h,i) => $("hit-"+i)?.checked && !$("hit-"+i).disabled);
+  if (!picked.length){ $("search-status").textContent = "Tick the entries to add first."; return; }
+  const anchorAcc = orthoInfo?.anchor.acc;
+  picked.sort((a,b) => (b.acc === anchorAcc) - (a.acc === anchorAcc));
+  addSeqs(picked.map(h => ({ label: `${h.gene || h.entry} · ${speciesShort(h.org)}`, acc: h.acc, org: h.org, tax: h.tax, seq: h.seq.toUpperCase(), features: h.features })));
+  if (anchorAcc){ const s = S.seqs.find(x => x.acc === anchorAcc); if (s) S.refId = s.id; renderSet(); }
+  renderHits(); $("search-status").textContent = `Added ${picked.length}.`;
+}
+
+/* ---------- alignment worker ---------- */
+function workerMain(){
+  const AA = "ARNDCQEGHILKMFPSTWYV";
+  const IDX = new Int8Array(128).fill(-1);
+  for (let i = 0; i < 20; i++){ IDX[AA.charCodeAt(i)] = i; }
+  const RED = ["AGPST","C","DENQ","HKR","ILMV","FWY"]; const RIDX = new Int8Array(128).fill(-1);
+  RED.forEach((g,gi) => { for (const c of g) RIDX[c.charCodeAt(0)] = gi; });
+  let MAT, OPT;  // substitution matrix (with centre offset) and options
+  const now = () => Date.now();
+
+  /* ---- distances and guide tree ---- */
+  function kmers(s){ const B = 1296, v = new Uint16Array(B); let code = 0, valid = 0;
+    for (let i = 0; i < s.length; i++){ const g = RIDX[s.charCodeAt(i)]; if (g < 0){ valid = 0; code = 0; continue; }
+      code = (code*6 + g) % B; valid++; if (valid >= 4 && v[code] < 65535) v[code]++; }
+    return v; }
+  function kmerDist(seqs){
+    const n = seqs.length, K = seqs.map(kmers), D = new Float64Array(n*n);
+    for (let a = 0; a < n; a++) for (let b = a+1; b < n; b++){
+      let sh = 0; const ka = K[a], kb = K[b]; for (let x = 0; x < 1296; x++){ const u = ka[x], v = kb[x]; sh += u < v ? u : v; }
+      const den = Math.min(seqs[a].length, seqs[b].length) - 3;
+      D[a*n+b] = D[b*n+a] = den > 0 ? Math.max(0, 1 - sh/den) : 1;
+    }
+    return D;
+  }
+  function alnDist(rows){ // Kimura-corrected distance from pairwise identity in the alignment
+    const n = rows.length, L = rows[0].length, D = new Float64Array(n*n);
+    for (let a = 0; a < n; a++) for (let b = a+1; b < n; b++){
+      let same = 0, both = 0; const ra = rows[a], rb = rows[b];
+      for (let c = 0; c < L; c++){ const x = ra.charCodeAt(c), y = rb.charCodeAt(c); if (x === 45 || y === 45) continue; both++; if (x === y) same++; }
+      const p = both ? 1 - same/both : 1, arg = 1 - p - 0.2*p*p;
+      D[a*n+b] = D[b*n+a] = arg > 0.05 ? -Math.log(arg) : 3;
+    }
+    return D;
+  }
+  function upgma(D, n){ // returns merges [a,b,node,height]
+    let cl = []; for (let i = 0; i < n; i++) cl.push({node:i, size:1});
+    let d = []; for (let i = 0; i < n; i++) d.push(Array.from(D.subarray(i*n, i*n+n)));
+    const merges = []; let next = n;
+    while (cl.length > 1){
+      let bi = 0, bj = 1, bv = Infinity;
+      for (let i = 0; i < cl.length; i++) for (let j = i+1; j < cl.length; j++) if (d[i][j] < bv){ bv = d[i][j]; bi = i; bj = j; }
+      const a = cl[bi], b = cl[bj], node = next++; merges.push([a.node, b.node, node, bv/2]);
+      const nr = []; for (let k = 0; k < cl.length; k++) nr.push((d[bi][k]*a.size + d[bj][k]*b.size)/(a.size+b.size));
+      nr[bi] = 0; for (let k = 0; k < cl.length; k++) d[k][bi] = nr[k]; d[bi] = nr;
+      cl[bi] = {node, size:a.size+b.size}; cl.splice(bj,1); d.splice(bj,1); for (const row of d) row.splice(bj,1);
+    }
+    return merges;
+  }
+  function treeWeights(merges, n){ // ClustalW-style: branch length shared among leaves below it
+    const h = new Float64Array(2*n), parent = new Int32Array(2*n).fill(-1), size = new Int32Array(2*n).fill(1), kids = {};
+    for (const [a,b,node,ht] of merges){ h[node] = ht; parent[a] = node; parent[b] = node; size[node] = size[a] + size[b]; kids[node] = [a,b]; }
+    const w = new Float64Array(n);
+    for (let i = 0; i < n; i++){ let x = i, s = 0; while (parent[x] >= 0){ const p = parent[x]; s += Math.max(0, h[p] - h[x]) / size[x]; x = p; } w[i] = s; }
+    const mean = w.reduce((a,b)=>a+b,0)/n;
+    for (let i = 0; i < n; i++) w[i] = mean > 0 ? Math.max(w[i], 0.05*mean) : 1;
+    return w;
+  }
+
+  /* ---- profiles and profile-profile alignment ---- */
+  function profile(rows, w){
+    const n = rows.length, L = rows[0].length, f = new Float32Array(L*20), occ = new Float32Array(L);
+    let ws = 0; for (let r = 0; r < n; r++) ws += w[r];
+    for (let r = 0; r < n; r++){ const row = rows[r], wr = w[r]/ws;
+      for (let c = 0; c < L; c++){ const ch = row.charCodeAt(c); if (ch !== 45){ occ[c] += wr; const k = IDX[ch]; if (k >= 0) f[c*20+k] += wr; } } }
+    return {f, occ, L};
+  }
+  function alignGroups(GA, GB, W, go, ge){
+    const A = profile(GA.rows, GA.ids.map(i => W[i])), B = profile(GB.rows, GB.ids.map(i => W[i])), n = A.L, m = B.L, Wd = m+1;
+    const MA = new Float32Array(n*20);
+    for (let i = 0; i < n; i++) for (let a = 0; a < 20; a++){ const fa = A.f[i*20+a]; if (!fa) continue; for (let k = 0; k < 20; k++) MA[i*20+k] += fa*MAT[a*20+k]; }
+    const bStart = new Int32Array(m+1), bK = [], bW = [];
+    for (let j = 0; j < m; j++){ bStart[j] = bK.length; for (let k = 0; k < 20; k++){ const v = B.f[j*20+k]; if (v){ bK.push(k); bW.push(v); } } }
+    bStart[m] = bK.length; const BK = Int8Array.from(bK), BW = Float32Array.from(bW);
+    const tb = new Uint8Array((n+1)*Wd), NEG = -1e30;
+    let pM = new Float64Array(Wd).fill(NEG), pX = new Float64Array(Wd).fill(NEG), pY = new Float64Array(Wd).fill(0);
+    let cM = new Float64Array(Wd), cX = new Float64Array(Wd), cY = new Float64Array(Wd);
+    const tge = OPT.tfac*ge, cumA = new Float64Array(n+1), cumB = new Float64Array(m+1);
+    for (let i = 0; i < n; i++) cumA[i+1] = cumA[i] + A.occ[i];
+    for (let j = 0; j < m; j++) cumB[j+1] = cumB[j] + B.occ[j];
+    for (let j = 1; j <= m; j++) pY[j] = -tge*cumB[j];
+    pM[0] = 0; pY[0] = NEG;
+    let best = -Infinity, bi = 0, bj = 0, bs = 0;
+    for (let i = 1; i <= n; i++){
+      cM[0] = NEG; cX[0] = -tge*cumA[i]; cY[0] = NEG;
+      const oa = A.occ[i-1], gOA = go*oa, gEA = ge*oa, base = (i-1)*20, row = i*Wd;
+      for (let j = 1; j <= m; j++){
+        let s = 0; for (let p = bStart[j-1], e = bStart[j]; p < e; p++) s += MA[base + BK[p]] * BW[p];
+        let v = pM[j-1], t = 0; if (pX[j-1] > v){ v = pX[j-1]; t = 1; } if (pY[j-1] > v){ v = pY[j-1]; t = 2; }
+        cM[j] = v + s;
+        let xv = pM[j]-gOA, xt = 0; const x1 = pX[j]-gEA, x2 = pY[j]-gOA; if (x1 > xv){ xv = x1; xt = 1; } if (x2 > xv){ xv = x2; xt = 2; }
+        cX[j] = xv;
+        const ob = B.occ[j-1]; let yv = cM[j-1]-go*ob, yt = 0; const y1 = cY[j-1]-ge*ob, y2 = cX[j-1]-go*ob; if (y1 > yv){ yv = y1; yt = 2; } if (y2 > yv){ yv = y2; yt = 1; }
+        cY[j] = yv;
+        tb[row+j] = t | (xt<<2) | (yt<<4);
+      }
+      if (i < n){ const pen = tge*(cumA[n]-cumA[i]), vals = [cM[m],cX[m],cY[m]]; for (let st = 0; st < 3; st++) if (vals[st]-pen > best){ best = vals[st]-pen; bi = i; bj = m; bs = st; } }
+      let tmp = pM; pM = cM; cM = tmp; tmp = pX; pX = cX; cX = tmp; tmp = pY; pY = cY; cY = tmp;
+    }
+    for (let j = 1; j <= m; j++){ const pen = tge*(cumB[m]-cumB[j]), vals = [pM[j],pX[j],pY[j]]; for (let st = 0; st < 3; st++) if (vals[st]-pen > best){ best = vals[st]-pen; bi = n; bj = j; bs = st; } }
+    const ops = [];
+    for (let i = n; i > bi; i--) ops.push(1);
+    for (let j = m; j > bj; j--) ops.push(2);
+    let i = bi, j = bj, st = bs;
+    while (i > 0 || j > 0){
+      if (i === 0){ ops.push(2); j--; continue; }
+      if (j === 0){ ops.push(1); i--; continue; }
+      const t = tb[i*Wd+j];
+      if (st === 0){ ops.push(0); st = t & 3; i--; j--; }
+      else if (st === 1){ ops.push(1); st = (t>>2) & 3; i--; }
+      else { ops.push(2); st = (t>>4) & 3; j--; }
+    }
+    ops.reverse();
+    const ra = GA.rows.map(() => []), rb = GB.rows.map(() => []); let ia = 0, ib = 0;
+    for (const op of ops){
+      if (op === 0){ for (let r = 0; r < ra.length; r++) ra[r].push(GA.rows[r][ia]); for (let r = 0; r < rb.length; r++) rb[r].push(GB.rows[r][ib]); ia++; ib++; }
+      else if (op === 1){ for (let r = 0; r < ra.length; r++) ra[r].push(GA.rows[r][ia]); for (let r = 0; r < rb.length; r++) rb[r].push("-"); ia++; }
+      else { for (let r = 0; r < ra.length; r++) ra[r].push("-"); for (let r = 0; r < rb.length; r++) rb[r].push(GB.rows[r][ib]); ib++; }
+    }
+    return { ids: GA.ids.concat(GB.ids), rows: ra.map(a => a.join("")).concat(rb.map(a => a.join(""))) };
+  }
+  function progressive(seqs, merges, W, go, ge, report){
+    const n = seqs.length, groups = {};
+    for (let i = 0; i < n; i++) groups[i] = {ids:[i], rows:[seqs[i]]};
+    merges.forEach(([a,b,node], k) => {
+      if (report) report(k, merges.length);
+      groups[node] = alignGroups(groups[a], groups[b], W, go, ge); delete groups[a]; delete groups[b];
+    });
+    const root = groups[merges[merges.length-1][2]], out = new Array(n);
+    root.ids.forEach((id, k) => out[id] = root.rows[k]);
+    return out;
+  }
+
+  /* ---- objective: weighted sum of pairs with affine gaps (terminal gaps cheap) ---- */
+  function spScore(rows, W, go, ge){
+    const n = rows.length, L = rows[0].length, tge = OPT.tfac*ge;
+    const codes = rows.map(r => { const a = new Int8Array(L); for (let c = 0; c < L; c++){ const ch = r.charCodeAt(c); a[c] = ch === 45 ? -1 : (IDX[ch] >= 0 ? IDX[ch] : 20); } return a; });
+    const first = codes.map(a => { for (let c = 0; c < L; c++) if (a[c] >= 0) return c; return L; });
+    const last = codes.map(a => { for (let c = L-1; c >= 0; c--) if (a[c] >= 0) return c; return -1; });
+    let total = 0;
+    for (let a = 0; a < n; a++) for (let b = a+1; b < n; b++){
+      const x = codes[a], y = codes[b]; let s = 0, gs = 0;
+      for (let c = 0; c < L; c++){
+        const p = x[c], q = y[c];
+        if (p < 0 && q < 0) continue;
+        if (p >= 0 && q >= 0){ if (p < 20 && q < 20) s += MAT[p*20+q]; gs = 0; continue; }
+        const gapIn = p < 0 ? a : b; const term = c < first[gapIn] || c > last[gapIn];
+        if (term) s -= tge; else if (gs === (p < 0 ? 1 : 2)) s -= ge; else { s -= go; gs = p < 0 ? 1 : 2; }
+      }
+      total += W[a]*W[b]*s;
+    }
+    return total;
+  }
+  function stripCols(rows){
+    const L = rows[0].length, keep = [];
+    for (let c = 0; c < L; c++){ for (const r of rows) if (r.charCodeAt(c) !== 45){ keep.push(c); break; } }
+    if (keep.length === L) return rows;
+    return rows.map(r => { let s = ""; for (const c of keep) s += r[c]; return s; });
+  }
+  function refine(rows, merges, W, go, ge, deadline, report){
+    const n = rows.length; if (n < 3) return rows;
+    const leaves = {}; for (let i = 0; i < n; i++) leaves[i] = [i];
+    const splits = [];
+    for (const [a,b,node] of merges){ leaves[node] = leaves[a].concat(leaves[b]); }
+    for (const [a,b] of merges){ for (const x of [a,b]){ const s = leaves[x]; if (s.length < n-1 || s.length === 1) splits.push(s); } }
+    // deduplicate complementary splits
+    const seen = new Set(), uniq = [];
+    for (const s of splits){ const inS = new Set(s), key = (inS.has(0) ? s : [...Array(n).keys()].filter(i => !inS.has(i))).slice().sort((p,q)=>p-q).join(","); if (!seen.has(key)){ seen.add(key); uniq.push(s); } }
+    let cur = rows, best = spScore(cur, W, go, ge);
+    for (let round = 0; round < OPT.rounds; round++){
+      let improved = false;
+      for (let k = 0; k < uniq.length; k++){
+        if (now() > deadline) return cur;
+        if (report) report(round, k, uniq.length);
+        const inS = new Set(uniq[k]);
+        const ia = [], ib = []; for (let i = 0; i < n; i++) (inS.has(i) ? ia : ib).push(i);
+        const GA = {ids: ia, rows: stripCols(ia.map(i => cur[i]))}, GB = {ids: ib, rows: stripCols(ib.map(i => cur[i]))};
+        const res = alignGroups(GA, GB, W, go, ge), out = new Array(n); res.ids.forEach((id, r) => out[id] = res.rows[r]);
+        const sc = spScore(out, W, go, ge);
+        if (sc > best + 1e-6){ best = sc; cur = out; improved = true; }
+      }
+      if (!improved) break;
+    }
+    return cur;
+  }
+
+  function run(seqs, go, ge){
+    const n = seqs.length; if (n === 1) return seqs.slice();
+    const t0 = now(), deadline = t0 + OPT.budgetMs;
+    const ones = new Float64Array(n).fill(1);
+    let merges = upgma(kmerDist(seqs), n);
+    let W = OPT.weights ? treeWeights(merges, n) : ones;
+    postMessage({type:"stage", text:"Progressive alignment"});
+    let rows = progressive(seqs, merges, W, go, ge, (k, tot) => postMessage({type:"progress", done:k, total:tot, phase:0}));
+    if (OPT.tree2 && n > 2 && now() < deadline){
+      postMessage({type:"stage", text:"Re-estimating the guide tree"});
+      const m2 = upgma(alnDist(rows), n), W2 = OPT.weights ? treeWeights(m2, n) : ones;
+      const rows2 = progressive(seqs, m2, W2, go, ge, (k, tot) => postMessage({type:"progress", done:k, total:tot, phase:1}));
+      if (spScore(rows2, W2, go, ge) >= spScore(rows, W2, go, ge)){ rows = rows2; merges = m2; W = W2; }
+    }
+    if (OPT.rounds > 0 && n > 2 && now() < deadline){
+      postMessage({type:"stage", text:"Refining"});
+      rows = refine(rows, merges, W, go, ge, deadline, (round, k, tot) => postMessage({type:"progress", done:k, total:tot, phase:2}));
+    }
+    return stripCols(rows);
+  }
+  self.onmessage = e => {
+    const {seqs, go, ge, b62, opts} = e.data;
+    OPT = Object.assign({center:0, tfac:0.5, weights:true, tree2:true, rounds:2, budgetMs:20000}, opts || {});
+    MAT = Float32Array.from(b62, v => v + OPT.center);
+    try { const rows = run(seqs, go, ge); postMessage({type:"done", rows}); }
+    catch (err){ postMessage({type:"error", message: String(err && err.message || err)}); }
+  };
+}
+let worker = null;
+function getWorker(){
+  if (worker) return worker;
+  const src = "(" + workerMain.toString() + ")()";
+  worker = new Worker(URL.createObjectURL(new Blob([src], {type:"text/javascript"})));
+  return worker;
+}
+
+/* ---------- align + score ---------- */
+function runAlign(){
+  const inc = S.seqs.filter(s => s.include); if (inc.length < 2) return;
+  if (!inc.some(s => s.id === S.refId)) S.refId = inc[0].id;
+  const pre = $("s-prealigned").checked;
+  const finish = rows => {
+    S.busy = false; $("btn-align").disabled = false; $("prog").style.width = "100%";
+    S.aln = { ids: inc.map(s => s.id), rows };
+    reorderForRef(); computeScores(); S.view = null; S.lookup = []; $("look-out").textContent = ""; renderAll();
+    const L = rows[0].length;
+    $("align-status").textContent = `${pre ? "Loaded" : "Aligned"} ${rows.length} sequences · ${L} columns.`;
+    renderSet();
+  };
+  if (pre){
+    const lens = new Set(inc.map(s => s.seq.length));
+    if (lens.size !== 1){ $("align-status").textContent = "Pre-aligned input needs every sequence the same length. Untick the option to align them here."; return; }
+    finish(inc.map(s => s.seq)); return;
+  }
+  const seqs = inc.map(s => s.seq.replace(/-/g,""));
+  const go = Math.max(0.1, +$("s-go").value || 10), ge = Math.max(0.05, +$("s-ge").value || 1);
+  S.busy = true; $("btn-align").disabled = true; $("prog").style.width = "4%";
+  const maxL = Math.max(...seqs.map(s => s.length));
+  $("align-status").textContent = `Aligning ${seqs.length} sequences${maxL > 1500 ? " (long proteins take a few seconds)" : ""}…`;
+  let w, stage = "Aligning";
+  try { w = getWorker(); } catch (e){ w = null; }
+  if (!w){ $("align-status").textContent = "This browser blocked background work; aligning on the page."; setTimeout(() => { /* fallback inline */
+      const fake = {}; const prevPost = self.postMessage; const fn = new Function("postMessage", "self", "(" + workerMain.toString() + ")(); return self.onmessage;");
+      const handler = fn(m => { if (m.type === "done") finish(m.rows); }, fake);
+      handler({data:{seqs, go, ge, b62:B62, opts: alignOpts()}}); }, 30); return; }
+  w.onmessage = e => {
+    const m = e.data;
+    if (m.type === "stage"){ stage = m.text; }
+    else if (m.type === "progress"){ const span = [[5,45],[45,70],[70,96]][m.phase || 0]; $("prog").style.width = Math.round(span[0] + (span[1]-span[0])*m.done/Math.max(1,m.total)) + "%"; $("align-status").textContent = `${stage}… ${m.done+1} of ${m.total}`; }
+    else if (m.type === "done") finish(m.rows);
+    else if (m.type === "error"){ S.busy = false; $("btn-align").disabled = false; $("align-status").textContent = "Alignment failed: " + m.message; }
+  };
+  w.onerror = ev => { S.busy = false; $("btn-align").disabled = false; $("align-status").textContent = "Alignment failed: " + (ev.message || "worker error"); };
+  w.postMessage({seqs, go, ge, b62: Array.from(B62), opts: alignOpts()});
+}
+function alignOpts(){ const r = $("s-refine").checked; return {center:1, tfac:1, weights:true, tree2:r, rounds:r ? 2 : 0, budgetMs:20000}; }
+function reorderForRef(){
+  const a = S.aln; const k = a.ids.indexOf(S.refId); if (k <= 0) return;
+  a.ids.unshift(a.ids.splice(k,1)[0]); a.rows.unshift(a.rows.splice(k,1)[0]);
+}
+function computeScores(){
+  const rows = S.aln.rows, N = rows.length, L = rows[0].length;
+  const method = $("s-method").value, win = +$("s-win").value, wOn = $("s-wt").checked, gapPen = $("s-gap").value === "penal";
+  let w = new Float64Array(N).fill(1/N);
+  if (wOn && N > 2){
+    const ww = new Float64Array(N);
+    for (let c = 0; c < L; c++){
+      const cnt = new Map(); for (let s = 0; s < N; s++){ const ch = rows[s][c]; cnt.set(ch, (cnt.get(ch)||0)+1); }
+      const types = cnt.size; for (let s = 0; s < N; s++) ww[s] += 1/(types*cnt.get(rows[s][c]));
+    }
+    const sum = ww.reduce((a,b)=>a+b,0); if (sum > 0) w = ww.map(v => v/sum);
+  }
+  const sc = new Float32Array(L), gap = new Float32Array(L), pc = 1e-6, LOG20 = Math.log2(20);
+  for (let c = 0; c < L; c++){
+    const f = new Float64Array(20); let gw = 0, tot = 0;
+    for (let s = 0; s < N; s++){ const ch = rows[s].charCodeAt(c); if (ch === 45){ gw += w[s]; continue; } const k = IDX[ch]; if (k >= 0){ f[k] += w[s]; tot += w[s]; } }
+    gap[c] = gw;
+    let v = 0;
+    if (method === "identity"){
+      const rc = rows[0][c];
+      if (rc !== "-"){ let same = 0; for (let s = 0; s < N; s++) if (rows[s][c] === rc) same++; v = same/N; }
+    } else if (tot > 0){
+      if (method === "jsd"){
+        let d = 0; const den = tot + 20*pc;
+        for (let k = 0; k < 20; k++){ const p = (f[k]+pc)/den, q = BG[k], r = 0.5*(p+q); d += 0.5*p*Math.log2(p/r) + 0.5*q*Math.log2(q/r); }
+        v = d;
+      } else {
+        let H = 0; for (let k = 0; k < 20; k++){ const p = f[k]/tot; if (p > 0) H -= p*Math.log2(p); }
+        v = 1 - H/LOG20;
+      }
+      if (gapPen) v *= (1 - gw);
+    }
+    sc[c] = Math.max(0, Math.min(1, v));
+  }
+  let out = sc;
+  if (win > 0){
+    out = new Float32Array(L);
+    for (let c = 0; c < L; c++){ let sum = 0, n = 0; for (let j = c-win; j <= c+win; j++){ if (j === c || j < 0 || j >= L) continue; sum += sc[j]; n++; } out[c] = n ? 0.5*sc[c] + 0.5*sum/n : sc[c]; }
+  }
+  S.score = out; S.gap = gap;
+  const ref = rows[0], colToRef = new Int32Array(L).fill(-1), refToCol = []; let p = 0;
+  for (let c = 0; c < L; c++) if (ref[c] !== "-"){ p++; colToRef[c] = p; refToCol[p] = c; }
+  S.colToRef = colToRef; S.refToCol = refToCol; S.refLen = p;
+}
+
+/* ---------- rendering ---------- */
+function seqById(id){ return S.seqs.find(s => s.id === id) || {label:"?"}; }
+function pctId(a, b){ let same = 0, both = 0; for (let c = 0; c < a.length; c++){ const x = a[c], y = b[c]; if (x === "-" || y === "-") continue; both++; if (x === y) same++; } return both ? 100*same/both : 0; }
+function renderAll(){ readTokens(); renderStats(); renderNames(); sizeViewer(); drawAln(); drawPlot(); renderIdMatrix(); runLookup(); }
+function renderStats(){
+  const a = S.aln, box = $("stats"); if (!a){ box.textContent = ""; return; }
+  const ref = a.rows[0], refScores = [];
+  for (let p = 1; p <= S.refLen; p++) refScores.push(S.score[S.refToCol[p]]);
+  const mean = refScores.reduce((x,y)=>x+y,0)/Math.max(1,refScores.length);
+  const sorted = refScores.slice().sort((x,y)=>x-y), hi = sorted[Math.floor(sorted.length*0.9)] ?? 0;
+  const ids = a.rows.slice(1).map(r => pctId(ref, r)); const minId = ids.length ? Math.min(...ids) : 100;
+  const method = {jsd:"JSD", entropy:"Entropy", identity:"Identity"}[$("s-method").value];
+  box.innerHTML = [
+    ["Sequences", a.rows.length], ["Columns", ref.length], ["Reference length", S.refLen],
+    ["Mean score ("+method+")", mean.toFixed(2)], ["Top 10% cut-off", hi.toFixed(2)], ["Lowest identity to ref", minId.toFixed(0)+"%"]
+  ].map(([k,v]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+}
+const CW = 11, RH = 18, RULER = 22, CONS = 30;
+function renderNames(){
+  const box = $("names"); box.textContent = ""; if (!S.aln) return;
+  const head = document.createElement("div"); head.style.height = RULER + "px"; head.innerHTML = `<span class="muted small">${S.colToRef ? "Ref numbering" : ""}</span>`; box.appendChild(head);
+  const ref = S.aln.rows[0];
+  S.aln.ids.forEach((id, k) => {
+    const d = document.createElement("div"); if (k === 0) d.className = "ref";
+    const nm = document.createElement("span"); nm.textContent = seqById(id).label; nm.style.overflow = "hidden"; nm.style.textOverflow = "ellipsis";
+    const pid = document.createElement("span"); pid.className = "pid"; pid.textContent = k === 0 ? "ref" : pctId(ref, S.aln.rows[k]).toFixed(0) + "%";
+    d.title = seqById(id).label; d.append(nm, pid); box.appendChild(d);
+  });
+  const c = document.createElement("div"); c.style.height = CONS + "px"; c.style.alignItems = "center"; c.innerHTML = '<span class="muted small">Conservation</span>'; box.appendChild(c);
+}
+function sizeViewer(){
+  const sc = $("scroller"), cv = $("aln"), inner = $("aln-inner");
+  if (!S.aln){ inner.style.width = "100%"; cv.width = 0; cv.height = 0; return; }
+  const L = S.aln.rows[0].length, H = RULER + S.aln.rows.length*RH + CONS, Wv = sc.clientWidth, dpr = window.devicePixelRatio || 1;
+  inner.style.width = (L*CW) + "px"; inner.style.height = H + "px";
+  cv.style.width = Wv + "px"; cv.style.height = H + "px"; cv.width = Math.round(Wv*dpr); cv.height = Math.round(H*dpr);
+}
+let alnRaf = 0;
+function drawAlnSoon(){ if (!alnRaf) alnRaf = requestAnimationFrame(() => { alnRaf = 0; drawAln(); }); }
+function drawAln(){
+  const cv = $("aln"); if (!S.aln || !cv.width) return;
+  const ctx = cv.getContext("2d"), dpr = window.devicePixelRatio || 1, sl = $("scroller").scrollLeft, Wv = cv.width/dpr, H = cv.height/dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,Wv,H);
+  ctx.fillStyle = TOK.surface; ctx.fillRect(0,0,Wv,H);
+  const rows = S.aln.rows, N = rows.length, L = rows[0].length;
+  const c0 = Math.max(0, Math.floor(sl/CW)), c1 = Math.min(L-1, Math.ceil((sl+Wv)/CW));
+  const mode = $("v-color").value, thr = +$("v-thr").value, look = new Set(S.lookup.map(p => S.refToCol[p]));
+  // column highlights
+  for (let c = c0; c <= c1; c++){
+    const x = c*CW - sl;
+    if (look.has(c)){ ctx.fillStyle = TOK.mark; ctx.globalAlpha = 0.18; ctx.fillRect(x, 0, CW, H); ctx.globalAlpha = 1; }
+    if (c === S.hoverCol || c === S.flashCol){ ctx.fillStyle = TOK.accent; ctx.globalAlpha = 0.16; ctx.fillRect(x, 0, CW, H); ctx.globalAlpha = 1; }
+  }
+  // ruler
+  ctx.font = `10px ${getComputedStyle(document.body).getPropertyValue("--f-mono")}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  for (let c = c0; c <= c1; c++){
+    const p = S.colToRef[c]; if (p < 0) continue; const x = c*CW - sl + CW/2;
+    if (p % 10 === 0){ ctx.fillStyle = TOK.muted; ctx.fillText(String(p), x, 12); ctx.fillRect(x-0.5, 15, 1, 6); }
+    else if (p % 5 === 0){ ctx.fillStyle = TOK.line; ctx.fillRect(x-0.5, 17, 1, 4); }
+  }
+  // residues
+  const fontRes = `600 12px ${getComputedStyle(document.body).getPropertyValue("--f-mono")}`;
+  ctx.font = fontRes; ctx.textBaseline = "middle";
+  const ref = rows[0];
+  for (let r = 0; r < N; r++){
+    const y = RULER + r*RH, row = rows[r];
+    for (let c = c0; c <= c1; c++){
+      const ch = row[c], x = c*CW - sl; let bg = null, fg = TOK.ink;
+      if (ch === "-"){ ctx.fillStyle = TOK.muted; ctx.globalAlpha = .5; ctx.fillText("-", x + CW/2, y + RH/2); ctx.globalAlpha = 1; continue; }
+      const sc = S.score[c];
+      if (sc >= thr){
+        if (mode === "type"){ const cl = CLASS[ch]; if (cl) bg = TOK["r-"+cl]; }
+        else if (mode === "cons"){ const rr = ramp(sc); bg = rr.css; if (rr.lum < 0.5) fg = "#ffffff"; else fg = "#10202c"; }
+        else if (mode === "ident"){ if (r > 0 ? ch === ref[c] : true){ bg = TOK["accent-soft"]; } }
+      }
+      if (bg){ ctx.fillStyle = bg; ctx.fillRect(x, y+1, CW, RH-2); }
+      ctx.fillStyle = fg; ctx.fillText(ch, x + CW/2, y + RH/2 + 0.5);
+    }
+  }
+  // consensus/conservation bars
+  const yb = RULER + N*RH + 4, hb = CONS - 8;
+  for (let c = c0; c <= c1; c++){
+    const v = S.score[c], x = c*CW - sl; ctx.fillStyle = ramp(v).css; const h = Math.max(1, v*hb);
+    ctx.fillRect(x+1, yb + hb - h, CW-2, h);
+  }
+  ctx.fillStyle = TOK.line; ctx.fillRect(0, RULER-0.5, Wv, 1); ctx.fillRect(0, RULER + N*RH, Wv, 1);
+}
+
+/* plot */
+const PM = {l:38, r:12, t:14, b:26}, TRACK = 30;
+let plotGeom = null, drag = null;
+function drawPlot(selX){
+  const cv = $("plot"), ctx = cv.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  const Wc = cv.parentElement.clientWidth - 20;
+  const ref = S.aln ? seqById(S.aln.ids[0]) : null; const feats = (ref && ref.features) || [];
+  const Hc = 200 + (feats.length ? TRACK : 0);
+  cv.style.width = Wc + "px"; cv.style.height = Hc + "px"; cv.width = Math.round(Wc*dpr); cv.height = Math.round(Hc*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle = TOK.surface; ctx.fillRect(0,0,Wc,Hc);
+  const mono = getComputedStyle(document.body).getPropertyValue("--f-mono");
+  if (!S.aln){ ctx.fillStyle = TOK.muted; ctx.font = `13px ${getComputedStyle(document.body).getPropertyValue("--f-ui")}`; ctx.textAlign = "center"; ctx.fillText("Align at least two sequences to see the profile.", Wc/2, 100); plotGeom = null; return; }
+  const Lr = S.refLen; if (!S.view) S.view = [1, Lr];
+  const [lo, hi] = S.view, span = hi - lo + 1;
+  const px0 = PM.l, pw = Wc - PM.l - PM.r, py0 = PM.t, ph = 200 - PM.t - PM.b;
+  plotGeom = {px0, pw, py0, ph, lo, hi, span, Hc, Wc};
+  const xOf = p => px0 + (p - lo) * pw / span;
+  // grid
+  ctx.font = `10px ${mono}`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const t of [0, 0.25, 0.5, 0.75, 1]){
+    const y = py0 + ph*(1-t); ctx.fillStyle = TOK.line; ctx.globalAlpha = t === 0 ? 1 : 0.6; ctx.fillRect(px0, Math.round(y)-0.5, pw, 1); ctx.globalAlpha = 1;
+    if (t !== 0.25 && t !== 0.75){ ctx.fillStyle = TOK.muted; ctx.fillText(t.toFixed(1), px0 - 6, y); }
+  }
+  // bars
+  const vals = new Float32Array(Lr+1); for (let p = 1; p <= Lr; p++) vals[p] = S.score[S.refToCol[p]];
+  if (span <= pw){
+    const bw = pw/span;
+    for (let p = lo; p <= hi; p++){ const v = vals[p], h = v*ph; ctx.fillStyle = ramp(v).css; ctx.fillRect(xOf(p) + (bw > 3 ? 0.5 : 0), py0 + ph - h, Math.max(bw - (bw > 3 ? 1 : 0), 0.8), h); }
+  } else {
+    for (let x = 0; x < pw; x++){
+      const a = Math.floor(lo + x*span/pw), b = Math.max(a, Math.floor(lo + (x+1)*span/pw) - 1);
+      let s = 0, n = 0; for (let p = a; p <= Math.min(b,hi); p++){ s += vals[p]; n++; } const v = n ? s/n : 0, h = v*ph;
+      ctx.fillStyle = ramp(v).css; ctx.fillRect(px0 + x, py0 + ph - h, 1, h);
+    }
+  }
+  // smoothed line
+  const sw = Math.max(3, Math.round(span/80)); ctx.strokeStyle = TOK.ink; ctx.lineWidth = 1.4; ctx.beginPath();
+  const step = Math.max(1, Math.floor(span/pw));
+  let first = true;
+  for (let p = lo; p <= hi; p += step){
+    let s = 0, n = 0; for (let q = Math.max(1, p-sw); q <= Math.min(Lr, p+sw); q++){ s += vals[q]; n++; }
+    const x = xOf(p) + (span <= pw ? pw/span/2 : 0), y = py0 + ph*(1 - s/n);
+    if (first){ ctx.moveTo(x,y); first = false; } else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // x ticks
+  const nice = (() => { const raw = span/8, mag = Math.pow(10, Math.floor(Math.log10(raw))); for (const m of [1,2,5,10]) if (m*mag >= raw) return m*mag; return 10*mag; })();
+  ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = TOK.muted;
+  for (let t = Math.ceil(lo/nice)*nice; t <= hi; t += nice){ if (t < 1) continue; const x = xOf(t) + (span <= pw ? pw/span/2 : 0); ctx.fillRect(Math.round(x)-0.5, py0+ph, 1, 4); ctx.fillText(String(t), x, py0 + ph + 6); }
+  // lookup markers
+  for (const p of S.lookup){ if (p < lo || p > hi) continue; const x = xOf(p) + (span <= pw ? pw/span/2 : 0);
+    ctx.fillStyle = TOK.mark; ctx.globalAlpha = .35; ctx.fillRect(Math.round(x)-0.5, py0, 1, ph); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.moveTo(x-4, py0-8); ctx.lineTo(x+4, py0-8); ctx.lineTo(x, py0-2); ctx.closePath(); ctx.fill(); }
+  // hover
+  if (S.hoverRef && S.hoverRef >= lo && S.hoverRef <= hi){ const x = xOf(S.hoverRef) + (span <= pw ? pw/span/2 : 0); ctx.fillStyle = TOK.accent; ctx.fillRect(Math.round(x)-0.5, py0, 1, ph); }
+  // domain track
+  if (feats.length){
+    const ty = 200 + 4, th = 18; ctx.font = `11px ${getComputedStyle(document.body).getPropertyValue("--f-ui")}`; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    ctx.fillStyle = TOK.line; ctx.fillRect(px0, ty + th/2 - 1, pw, 2);
+    const shown = feats.filter(f => f.end >= lo && f.start <= hi).sort((a,b) => (b.end-b.start)-(a.end-a.start));
+    for (const f of shown){
+      const x0 = xOf(Math.max(lo, f.start)), x1 = xOf(Math.min(hi, f.end) + 1), w = Math.max(2, x1 - x0);
+      ctx.fillStyle = f.type === "Domain" ? TOK.accent : TOK["accent-soft"]; ctx.globalAlpha = f.type === "Domain" ? 0.85 : 1;
+      ctx.fillRect(x0, ty + (f.type === "Domain" ? 0 : 3), w, f.type === "Domain" ? th : th - 6); ctx.globalAlpha = 1;
+      const label = f.desc; const tw = ctx.measureText(label).width;
+      if (tw + 8 < w){ ctx.fillStyle = f.type === "Domain" ? TOK.surface : TOK.ink; ctx.fillText(label, x0 + 4, ty + th/2); }
+    }
+  }
+  // selection
+  if (selX){ ctx.fillStyle = TOK.accent; ctx.globalAlpha = 0.15; ctx.fillRect(Math.min(selX[0],selX[1]), py0, Math.abs(selX[1]-selX[0]), ph); ctx.globalAlpha = 1; }
+  $("btn-zoomreset").hidden = !(lo !== 1 || hi !== Lr);
+}
+function plotPos(ev){
+  const g = plotGeom; if (!g) return null; const r = $("plot").getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  if (x < g.px0 || x > g.px0 + g.pw) return {x, y, p: null};
+  const p = Math.min(g.hi, Math.max(g.lo, Math.floor(g.lo + (x - g.px0)*g.span/g.pw)));
+  return {x, y, p};
+}
+function featuresAt(p){ const ref = seqById(S.aln.ids[0]); return (ref.features || []).filter(f => p >= f.start && p <= f.end).map(f => f.desc); }
+function showTip(ev, html){ const t = $("tip"); t.innerHTML = html; t.hidden = false;
+  const w = t.offsetWidth, h = t.offsetHeight; let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14; if (y + h > innerHeight - 8) y = ev.clientY - h - 14; t.style.left = x + "px"; t.style.top = y + "px"; }
+function hideTip(){ $("tip").hidden = true; }
+function colSummary(c){
+  const counts = {}; for (const r of S.aln.rows){ const ch = r[c]; counts[ch] = (counts[ch]||0)+1; }
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,v]) => `${k}×${v}`).join(" ");
+}
+function jumpToCol(c){
+  const sc = $("scroller"); sc.scrollLeft = Math.max(0, c*CW - sc.clientWidth/2);
+  S.flashCol = c; drawAln(); clearTimeout(jumpToCol.t); jumpToCol.t = setTimeout(() => { S.flashCol = -1; drawAln(); }, 1600);
+}
+
+/* identity matrix */
+function renderIdMatrix(){
+  const box = $("idmat"); if (!S.aln){ box.innerHTML = '<div class="muted small">No alignment yet.</div>'; return; }
+  const rows = S.aln.rows, ids = S.aln.ids, N = rows.length;
+  if (N > 40){ box.innerHTML = `<div class="muted small">Shown for up to 40 sequences (you have ${N}).</div>`; return; }
+  const M = []; let mn = 100;
+  for (let a = 0; a < N; a++){ M.push([]); for (let b = 0; b < N; b++){ const v = a === b ? 100 : pctId(rows[a], rows[b]); M[a].push(v); if (a !== b) mn = Math.min(mn, v); } }
+  let h = '<table class="data"><thead><tr><th></th>' + ids.map((id,i) => `<th title="${esc(seqById(id).label)}">${i+1}</th>`).join("") + "</tr></thead><tbody>";
+  for (let a = 0; a < N; a++){
+    h += `<tr><th class="rl">${a+1}. ${esc(seqById(ids[a]).label)}</th>`;
+    for (let b = 0; b < N; b++){
+      const v = M[a][b], t = mn >= 100 ? 1 : (v - mn)/(100 - mn), rr = ramp(a === b ? 0 : t*0.85);
+      h += `<td class="mono" style="background:${a===b ? "transparent" : rr.css};color:${a===b ? "var(--muted)" : (rr.lum < 0.5 ? "#fff" : "#10202c")}">${a === b ? "–" : v.toFixed(0)}</td>`;
+    }
+    h += "</tr>";
+  }
+  box.innerHTML = h + "</tbody></table>";
+}
+
+/* lookup */
+function runLookup(){
+  const out = $("look-out"); const txt = $("look-in").value.trim();
+  if (!S.aln){ out.textContent = ""; return; }
+  if (!txt){ S.lookup = []; out.textContent = ""; drawPlot(); drawAln(); return; }
+  const pos = [], warn = [];
+  for (const tok of txt.split(/[\s,;]+/).filter(Boolean)){
+    const m = tok.match(/^([A-Za-z]?)(\d+)(?:-([A-Za-z]?)(\d+))?$/);
+    if (!m){ warn.push(`Couldn't read "${tok}"`); continue; }
+    const a = +m[2], b = m[4] ? +m[4] : a;
+    for (let p = Math.min(a,b); p <= Math.max(a,b) && pos.length < 400; p++){
+      if (p < 1 || p > S.refLen){ warn.push(`${p} is outside the reference (1–${S.refLen})`); break; }
+      pos.push(p);
+    }
+    if (m[1] && !m[4]){ const actual = S.aln.rows[0][S.refToCol[a]]; if (actual && actual.toUpperCase() !== m[1].toUpperCase()) warn.push(`Reference has ${actual}${a}, not ${m[1].toUpperCase()}${a}`); }
+  }
+  S.lookup = [...new Set(pos)].sort((x,y)=>x-y);
+  const ids = S.aln.ids, rows = S.aln.rows;
+  let h = warn.length ? `<div class="note warn" style="margin-bottom:8px">${warn.map(esc).join("<br>")}</div>` : "";
+  if (S.lookup.length){
+    h += '<table class="data"><thead><tr><th class="rl">Ref pos</th>' + ids.map(id => `<th>${esc(seqById(id).label)}</th>`).join("") + "<th>Score</th><th>Gaps</th></tr></thead><tbody>";
+    for (const p of S.lookup){
+      const c = S.refToCol[p], rc = rows[0][c];
+      h += `<tr><td class="rl mono"><a href="#" data-col="${c}">${rc}${p}</a></td>` + rows.map((r,k) => { const ch = r[c]; const cls = ch === "-" ? "gap" : (k > 0 && ch !== rc ? "diff" : ""); return `<td class="mono ${cls}">${ch}</td>`; }).join("")
+        + `<td class="mono">${S.score[c].toFixed(2)}</td><td class="mono">${Math.round(S.gap[c]*100)}%</td></tr>`;
+    }
+    h += "</tbody></table><div class=\"small muted\" style=\"margin-top:6px\">Orange letters differ from the reference.</div>";
+  }
+  out.innerHTML = h;
+  out.querySelectorAll("a[data-col]").forEach(a => a.onclick = e => { e.preventDefault(); jumpToCol(+a.dataset.col); });
+  drawPlot(); drawAln();
+}
+
+/* ---------- exports ---------- */
+function safeName(s){ return s.replace(/[^A-Za-z0-9_.-]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40) || "seq"; }
+function exportFasta(){ return S.aln.ids.map((id,k) => { const s = seqById(id); return `>${safeName(s.label)}${s.acc ? " " + s.acc : ""}\n` + S.aln.rows[k].match(/.{1,60}/g).join("\n"); }).join("\n") + "\n"; }
+function exportClustal(){
+  const names = S.aln.ids.map(id => safeName(seqById(id).label)), pad = Math.max(...names.map(n => n.length)) + 4, rows = S.aln.rows, L = rows[0].length;
+  const strong = ["STA","NEQK","NHQK","NDEQ","QHRK","MILV","MILF","HY","FYW"], weak = ["CSA","ATV","SAG","STNK","STPA","SGND","SNDEQK","NDEQHK","NEQHRK","FVLIM","HFY"];
+  const grp = (set, list) => list.some(g => [...set].every(ch => g.includes(ch)));
+  let cons = "";
+  for (let c = 0; c < L; c++){ const set = new Set(rows.map(r => r[c])); if (set.has("-")) cons += " "; else if (set.size === 1) cons += "*"; else if (grp(set, strong)) cons += ":"; else if (grp(set, weak)) cons += "."; else cons += " "; }
+  let out = "CLUSTAL multiple sequence alignment (Conservation Bench)\n\n\n";
+  for (let s = 0; s < L; s += 60){
+    rows.forEach((r,k) => out += names[k].padEnd(pad) + r.slice(s, s+60) + "\n");
+    out += " ".repeat(pad) + cons.slice(s, s+60) + "\n\n";
+  }
+  return out;
+}
+function exportCsv(){
+  const ids = S.aln.ids, rows = S.aln.rows, L = rows[0].length;
+  let out = "alignment_column,ref_position,ref_residue,score,gap_fraction," + ids.map(id => '"' + seqById(id).label.replace(/"/g,"'") + '"').join(",") + "\n";
+  for (let c = 0; c < L; c++){ const p = S.colToRef[c]; out += `${c+1},${p > 0 ? p : ""},${rows[0][c]},${S.score[c].toFixed(4)},${S.gap[c].toFixed(3)},` + rows.map(r => r[c]).join(",") + "\n"; }
+  return out;
+}
+let dlCap;
+async function saveFile(name, data, mime, framedName){
+  $("ex-status").textContent = "";
+  if (dlCap === undefined) dlCap = (window.claude && window.claude.use) ? await window.claude.use("downloads").catch(() => null) : null;
+  if (dlCap){
+    try { await dlCap.save({filename: framedName || name, data}); $("ex-status").textContent = "Saved."; }
+    catch (e){ $("ex-status").textContent = e && e.code === "declined" ? "" : "Couldn't save here: " + ((e && e.message) || "unavailable"); }
+    return;
+  }
+  const blob = data instanceof Blob ? data : new Blob([data], {type: mime});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function baseName(){ const r = seqById(S.aln.ids[0]); return safeName((r.label || "alignment").split(" · ")[0]) + "_conservation"; }
+function needAln(){ if (!S.aln){ $("ex-status").textContent = "Align sequences first."; return false; } return true; }
+
+/* ---------- events ---------- */
+function bind(){
+  $("tab-search").onclick = () => { $("tab-search").setAttribute("aria-selected","true"); $("tab-fasta").setAttribute("aria-selected","false"); $("pane-search").hidden = false; $("pane-fasta").hidden = true; };
+  $("tab-fasta").onclick = () => { $("tab-fasta").setAttribute("aria-selected","true"); $("tab-search").setAttribute("aria-selected","false"); $("pane-fasta").hidden = false; $("pane-search").hidden = true; };
+  const modeUI = () => { const m = $("q-mode").value;
+    $("q").placeholder = {ortho:"PCNA or P12004", gene:"PCNA", protein:"proliferating cell nuclear antigen", acc:"P12004, P17918", raw:"gene:POLR2A AND reviewed:true"}[m];
+    $("anchor-row").hidden = m !== "ortho"; $("filter-row").hidden = m === "ortho" || m === "acc" || m === "raw";
+    $("mode-note").textContent = m === "ortho"
+      ? "Type a gene name or accession. Orthologs are found through UniProt's OMA and OrthoDB groups, so orthologs with different gene names (PCNA is POL30 in budding yeast) are included."
+      : "Plain searches only match names, so orthologs with other gene names are missed. Use Orthologs of for cross-species sets."; };
+  $("q-mode").onchange = modeUI; modeUI();
+  const anc = $("q-anchor"); ORGS.forEach(o => { const op = document.createElement("option"); op.value = o.ids[o.ids.length-1]; op.textContent = o.k; anc.appendChild(op); }); anc.value = "9606";
+  $("show-alt").onchange = () => renderHits();
+  $("btn-search").onclick = doSearch; $("q").onkeydown = e => { if (e.key === "Enter") doSearch(); };
+  $("btn-add-sel").onclick = addSelectedHits;
+  $("btn-sel-all").onclick = () => searchHits.forEach((h,i) => { const c = $("hit-"+i); if (c && !c.disabled) c.checked = true; });
+  $("btn-fasta-add").onclick = () => { const r = parseFasta($("fasta-in").value); if (!r.length){ $("align-status").textContent = "No sequences found in that text."; return; } addSeqs(r); $("fasta-in").value = ""; };
+  const readFiles = async files => { let all = []; for (const f of files) all = all.concat(parseFasta(await f.text())); if (all.length) addSeqs(all); };
+  $("fasta-file").onchange = e => { readFiles(e.target.files); e.target.value = ""; };
+  const ta = $("fasta-in");
+  ta.addEventListener("dragover", e => { e.preventDefault(); ta.style.borderColor = "var(--accent)"; });
+  ta.addEventListener("dragleave", () => ta.style.borderColor = "");
+  ta.addEventListener("drop", e => { e.preventDefault(); ta.style.borderColor = ""; if (e.dataTransfer.files.length) readFiles(e.dataTransfer.files); });
+  $("btn-clear").onclick = () => { S.seqs = []; S.refId = null; S.demo = false; renderSet(); };
+  $("btn-align").onclick = runAlign;
+  for (const id of ["s-method","s-win","s-wt","s-gap"]) $(id).onchange = () => { if (S.aln){ computeScores(); renderAll(); } };
+  $("v-color").onchange = drawAln;
+  $("v-thr").oninput = () => { $("v-thr-val").textContent = (+$("v-thr").value).toFixed(2); drawAln(); };
+  $("scroller").addEventListener("scroll", drawAlnSoon, {passive:true});
+  // viewer hover
+  const cv = $("aln");
+  cv.addEventListener("mousemove", e => {
+    if (!S.aln) return; const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const c = Math.floor((x + $("scroller").scrollLeft)/CW); if (c < 0 || c >= S.aln.rows[0].length){ hideTip(); return; }
+    const row = Math.floor((y - RULER)/RH); S.hoverCol = c; drawAlnSoon();
+    const p = S.colToRef[c], rc = S.aln.rows[0][c];
+    let head = row >= 0 && row < S.aln.rows.length ? `<b>${esc(seqById(S.aln.ids[row]).label)}</b>: ${S.aln.rows[row][c]}<br>` : "";
+    showTip(e, head + `<span class="mono">Column ${c+1}${p > 0 ? ` · ref ${rc}${p}` : " · gap in ref"}<br>Score ${S.score[c].toFixed(2)} · gaps ${Math.round(S.gap[c]*100)}%<br>${esc(colSummary(c))}</span>`);
+  });
+  cv.addEventListener("mouseleave", () => { S.hoverCol = -1; drawAlnSoon(); hideTip(); });
+  cv.addEventListener("click", e => {
+    if (!S.aln) return; const r = cv.getBoundingClientRect(); const c = Math.floor((e.clientX - r.left + $("scroller").scrollLeft)/CW);
+    const p = S.colToRef[c]; if (p > 0){ const cur = $("look-in").value.trim(); const tok = S.aln.rows[0][c] + p; if (!cur.split(/[\s,;]+/).includes(tok)){ $("look-in").value = cur ? cur + ", " + tok : tok; runLookup(); } }
+  });
+  // plot
+  const pl = $("plot");
+  pl.addEventListener("mousedown", e => { const q = plotPos(e); if (q && q.p) drag = {x0: q.x, p0: q.p, moved:false}; });
+  window.addEventListener("mouseup", e => {
+    if (!drag) return; const q = plotPos(e); const d = drag; drag = null;
+    if (q && q.p && Math.abs(q.x - d.x0) > 6){ const a = Math.min(d.p0, q.p), b = Math.max(d.p0, q.p); if (b - a >= 4) S.view = [a, b]; drawPlot(); }
+    else if (q && q.p){ jumpToCol(S.refToCol[q.p]); drawPlot(); }
+  });
+  pl.addEventListener("mousemove", e => {
+    if (!S.aln) return; const q = plotPos(e); if (!q || !q.p){ hideTip(); S.hoverRef = null; drawPlot(drag ? [drag.x0, q ? q.x : drag.x0] : null); return; }
+    S.hoverRef = q.p; drawPlot(drag ? [drag.x0, q.x] : null);
+    const c = S.refToCol[q.p], f = featuresAt(q.p);
+    showTip(e, `<span class="mono"><b>${S.aln.rows[0][c]}${q.p}</b> · score ${S.score[c].toFixed(2)} · gaps ${Math.round(S.gap[c]*100)}%<br>${esc(colSummary(c))}</span>${f.length ? "<br>" + esc(f.join(", ")) : ""}`);
+  });
+  pl.addEventListener("mouseleave", () => { S.hoverRef = null; hideTip(); if (!drag) drawPlot(); });
+  pl.addEventListener("dblclick", () => { S.view = null; drawPlot(); });
+  $("btn-zoomreset").onclick = () => { S.view = null; drawPlot(); };
+  // lookup
+  $("btn-look").onclick = runLookup; $("look-in").onkeydown = e => { if (e.key === "Enter") runLookup(); };
+  $("btn-look-clear").onclick = () => { $("look-in").value = ""; runLookup(); };
+  // exports
+  $("ex-fasta").onclick = () => needAln() && saveFile(baseName() + ".fasta", exportFasta(), "text/plain", baseName() + "_fasta.txt");
+  $("ex-clustal").onclick = () => needAln() && saveFile(baseName() + ".aln", exportClustal(), "text/plain", baseName() + "_clustal.txt");
+  $("ex-csv").onclick = () => needAln() && saveFile(baseName() + ".csv", exportCsv(), "text/csv");
+  $("ex-png").onclick = () => { if (!needAln()) return; $("plot").toBlob(b => b && saveFile(baseName() + "_profile.png", b, "image/png"), "image/png"); };
+  // resize + theme
+  let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => { if (S.aln){ sizeViewer(); drawAln(); } drawPlot(); }, 120); });
+  const retheme = () => { readTokens(); if (S.aln) renderAll(); else drawPlot(); };
+  try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme); } catch(e){}
+  new MutationObserver(retheme).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme","class"]});
+}
+
+/* ---------- boot ---------- */
+readTokens(); renderOrgs(); bind();
+addSeqs(parseFasta(DEMO).map(r => ({...r, acc: ""})), {demo:true});
+renderIdMatrix(); drawPlot();
+runAlign();
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(() => { if (S.aln){ renderAll(); } });
+</script>
+
+</body>
+</html>
