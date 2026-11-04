@@ -82,16 +82,6 @@ Please use **[GitHub Issues](https://github.com/laolabtools/conservation-bench/i
 - your browser and operating system;
 - a screenshot, and if you can, the FASTA or the search you used so the problem can be reproduced (remove anything confidential first).
 
-If you would rather not post publicly, email [contact@lao-labtools.org](mailto:contact@lao-labtools.org).
-
-## Citing
-
-If this tool contributed to published work, please cite it as:
-
-> Lao L. *Conservation Bench: protein alignment and per-residue conservation in the browser*. 2026. https://github.com/laolabtools/conservation-bench
-
-Please also cite the methods and resources it is built on (listed below), in particular Capra & Singh (2007) for the conservation score, and UniProt, OMA and OrthoDB for the sequences.
-
 ## Acknowledgements and references
 
 **Conservation scoring.**
@@ -122,7 +112,7 @@ Please also cite the methods and resources it is built on (listed below), in par
 
 **Free for academic and other non-commercial use** under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-In plain terms (the licence text is what counts): you may use, copy, modify and share this software for research, teaching, study and any other non-commercial purpose, including at universities, hospitals, non-profit research institutes and government laboratories. **Commercial use**, such as use by or for a company, in industry R&D, contract research or a paid service, is not covered and needs a separate licence. Contact [contact@lao-labtools.org](mailto:contact@lao-labtools.org).
+In plain terms (the licence text is what counts): you may use, copy, modify and share this software for research, teaching, study and any other non-commercial purpose, including at universities, hospitals, non-profit research institutes and government laboratories. **Commercial use**, such as use by or for a company, in industry R&D, contract research or a paid service, is not covered and needs a separate licence; to ask about one, open an issue in this repository.
 
 **Data.** Sequences and annotations retrieved from UniProt remain under UniProt's [CC BY 4.0 licence](https://www.uniprot.org/help/license); cite UniProt when you publish results based on them.
 
