@@ -114,7 +114,7 @@ Please use **[GitHub Issues](https://github.com/laolabtools/conservation-bench/i
 
 In plain terms (the licence text is what counts): you may use, copy, modify and share this software for research, teaching, study and any other non-commercial purpose, including at universities, hospitals, non-profit research institutes and government laboratories. **Commercial use**, such as use by or for a company, in industry R&D, contract research or a paid service, is not covered and needs a separate licence; to ask about one, open an issue in this repository.
 
-**Data.** Sequences and annotations retrieved from UniProt remain under UniProt's [CC BY 4.0 licence](https://www.uniprot.org/help/license); cite UniProt when you publish results based on them.
+**Data.** Sequences and annotations retrieved from UniProt, including the three ubiquitin sequences of the built-in demo set, are © UniProt Consortium and licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([UniProt licence](https://www.uniprot.org/help/license)). Alignments you export from UniProt sequences stay under those terms; cite UniProt when you publish results based on them.
 
 ## Disclaimer
 
